@@ -16,6 +16,7 @@ from collections import Counter, OrderedDict
 
 import copy
 
+import requests, pandas
 
 # Python 2 compatibility
 if sys.version_info.major == 2:
@@ -214,6 +215,9 @@ def main():
 
     # Split up list of KBs and the potential Service Packs/Cumulative updates available
     kbs, sp = get_patches_servicepacks(filtered, cves, productfilter)
+
+    if args.msb_lookup:
+        filtered = get_cve_msbs(filtered)
 
     # Display results
     if len(filtered) > 0:
@@ -633,6 +637,19 @@ def get_most_recent_kb(results):
         return None
 
 
+# Obtain Microsoft Security Bulletin codes of CVEs
+def get_cve_msbs(results):
+    reference_url = 'https://cve.mitre.org/data/refs/refmap/source-MS.html'
+    response = requests.get(reference_url)
+    table = pandas.read_html(response.text)[3].values.tolist()
+    for i in range(len(results)):
+        for row in table:
+            if results[i]['CVE'] in row[1]:
+                results[i]['BulletinMS'] = row[0].split(':')[1]
+    
+    return results
+
+
 # Output results of wes.py to screen
 def print_results(results):
     print()
@@ -646,7 +663,7 @@ def print_results(results):
             label = 'Exploits'
 
         print('''Date: %s
-CVE: %s
+CVE: %s %s
 KB: KB%s
 Title: %s
 Affected product: %s
@@ -654,7 +671,7 @@ Affected component: %s
 Severity: %s
 Impact: %s
 %s: %s
-''' % (res['DatePosted'], res['CVE'], res['BulletinKB'], res['Title'], res['AffectedProduct'], res['AffectedComponent'], res['Severity'], res['Impact'], label, value))
+''' % (res['DatePosted'], res['CVE'], '('+res['BulletinMS']+')' if 'BulletinMS' in res else '', res['BulletinKB'], res['Title'], res['AffectedProduct'], res['AffectedComponent'], res['Severity'], res['Impact'], label, value))
 
 
 # Output results of wes.py to a .csv file
@@ -786,8 +803,8 @@ def parse_arguments():
     parser.add_argument('-i', '--impact', dest='impacts', nargs='+', default='', help='Only display vulnerabilities with a given impact')
     parser.add_argument('-s', '--severity', dest='severities', nargs='+', default='', help='Only display vulnerabilities with a given severity')
     parser.add_argument('-o', '--output', action='store', dest='outputfile', nargs='?', help='Store results in a file')
-    parser.add_argument("--muc-lookup", dest="muc_lookup", action="store_true", help="Hide vulnerabilities if installed hotfixes are listed in the Microsoft Update Catalog as superseding hotfixes for the original BulletinKB",
-    )
+    parser.add_argument("--muc-lookup", dest="muc_lookup", action="store_true", help="Hide vulnerabilities if installed hotfixes are listed in the Microsoft Update Catalog as superseding hotfixes for the original BulletinKB")
+    parser.add_argument("--msb-lookup", dest="msb_lookup", action="store_true", help="Map Miscrosoft Security Bulletin codes to CVEs")
     parser.add_argument('-h', '--help', action='help', help='Show this help message and exit')
 
     # Always show full help when no arguments are provided
